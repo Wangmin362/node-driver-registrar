@@ -65,11 +65,11 @@ var (
 	connectionTimeout = flag.Duration("connection-timeout", 0, "The --connection-timeout flag is deprecated")
 	// CSI插件连接超时时间
 	operationTimeout = flag.Duration("timeout", time.Second, "Timeout for waiting for communication with driver")
-	// TODO CSI存储插件的位置
+	// TODO CSI存储插件的位置，譬如：/csi/csi.sock
 	csiAddress = flag.String("csi-address", "/run/csi/socket", "Path of the CSI driver socket that the node-driver-registrar will connect to.")
 	// TODO 注册路径是干嘛用的？
 	pluginRegistrationPath = flag.String("plugin-registration-path", "/registration", "Path to Kubernetes plugin registration directory.")
-	// TODO 这个路径似乎是Kubelet插件注册的路径
+	// TODO 这个路径似乎是Kubelet插件注册的路径，譬如：/var/lib/kubelet/plugins/<drivername.example.com>/csi.sock
 	kubeletRegistrationPath = flag.String("kubelet-registration-path", "", "Path of the CSI driver socket on the Kubernetes host machine.")
 	// 设置node-driver-register健康检测端口
 	healthzPort  = flag.Int("health-port", 0, "(deprecated) TCP port for healthz requests. Set to 0 to disable the healthz server. Only one of `--health-port` and `--http-endpoint` can be set.")

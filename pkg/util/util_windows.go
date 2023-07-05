@@ -35,6 +35,7 @@ func CleanupSocketFile(socketPath string) error {
 	if err != nil {
 		return err
 	}
+	// 如果当前的Socket文件存在，就移除这个Socket文件
 	if socketExists {
 		if err := os.Remove(socketPath); err != nil {
 			return fmt.Errorf("failed to remove stale socket %s with error: %+v", socketPath, err)

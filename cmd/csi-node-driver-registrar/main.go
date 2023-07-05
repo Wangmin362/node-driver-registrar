@@ -50,6 +50,7 @@ const (
 
 	// ModeKubeletRegistrationProbe makes node-driver-registrar act as an exec probe
 	// that checks if the kubelet plugin registration succeeded.
+	// TODO 这种模式有啥用？
 	ModeKubeletRegistrationProbe = "kubelet-registration-probe"
 )
 
@@ -61,27 +62,36 @@ var (
 
 // Command line flags
 var (
-	connectionTimeout       = flag.Duration("connection-timeout", 0, "The --connection-timeout flag is deprecated")
-	operationTimeout        = flag.Duration("timeout", time.Second, "Timeout for waiting for communication with driver")
-	csiAddress              = flag.String("csi-address", "/run/csi/socket", "Path of the CSI driver socket that the node-driver-registrar will connect to.")
-	pluginRegistrationPath  = flag.String("plugin-registration-path", "/registration", "Path to Kubernetes plugin registration directory.")
+	connectionTimeout = flag.Duration("connection-timeout", 0, "The --connection-timeout flag is deprecated")
+	// CSI插件连接超时时间
+	operationTimeout = flag.Duration("timeout", time.Second, "Timeout for waiting for communication with driver")
+	// TODO CSI存储插件的位置
+	csiAddress = flag.String("csi-address", "/run/csi/socket", "Path of the CSI driver socket that the node-driver-registrar will connect to.")
+	// TODO 注册路径是干嘛用的？
+	pluginRegistrationPath = flag.String("plugin-registration-path", "/registration", "Path to Kubernetes plugin registration directory.")
+	// TODO 这个路径似乎是Kubelet插件注册的路径
 	kubeletRegistrationPath = flag.String("kubelet-registration-path", "", "Path of the CSI driver socket on the Kubernetes host machine.")
-	healthzPort             = flag.Int("health-port", 0, "(deprecated) TCP port for healthz requests. Set to 0 to disable the healthz server. Only one of `--health-port` and `--http-endpoint` can be set.")
-	httpEndpoint            = flag.String("http-endpoint", "", "The TCP network address where the HTTP server for diagnostics, including pprof and the health check indicating whether the registration socket exists, will listen (example: `:8080`). The default is empty string, which means the server is disabled. Only one of `--health-port` and `--http-endpoint` can be set.")
-	showVersion             = flag.Bool("version", false, "Show version.")
-	mode                    = flag.String("mode", ModeRegistration, `The running mode of node-driver-registrar. "registration" runs node-driver-registrar as a long running process. "kubelet-registration-probe" runs as a health check and returns a status code of 0 if the driver was registered successfully, in the probe definition make sure that the value of --kubelet-registration-path is the same as in the container.`)
-	enableProfile           = flag.Bool("enable-pprof", false, "enable pprof profiling")
+	// 设置node-driver-register健康检测端口
+	healthzPort  = flag.Int("health-port", 0, "(deprecated) TCP port for healthz requests. Set to 0 to disable the healthz server. Only one of `--health-port` and `--http-endpoint` can be set.")
+	httpEndpoint = flag.String("http-endpoint", "", "The TCP network address where the HTTP server for diagnostics, including pprof and the health check indicating whether the registration socket exists, will listen (example: `:8080`). The default is empty string, which means the server is disabled. Only one of `--health-port` and `--http-endpoint` can be set.")
+	showVersion  = flag.Bool("version", false, "Show version.")
+	mode         = flag.String("mode", ModeRegistration, `The running mode of node-driver-registrar.
+"registration" runs node-driver-registrar as a long running process. "kubelet-registration-probe" runs as a health check 
+and returns a status code of 0 if the driver was registered successfully, in the probe definition make sure that
+the value of --kubelet-registration-path is the same as in the container.`)
+	enableProfile = flag.Bool("enable-pprof", false, "enable pprof profiling")
 
 	// Set during compilation time
 	version = "unknown"
 
 	// List of supported versions
+	// TODO 这里的Version指的是谁的Version?
 	supportedVersions = []string{"1.0.0"}
 )
 
 // registrationServer is a sample plugin to work with plugin watcher
 type registrationServer struct {
-	driverName string
+	driverName string // CSI插件的名字
 	endpoint   string
 	version    []string
 }
@@ -102,6 +112,7 @@ func (e registrationServer) GetInfo(ctx context.Context, req *registerapi.InfoRe
 	klog.Infof("Received GetInfo call: %+v", req)
 
 	// on successful registration, create the registration probe file
+	// 创建文件
 	err := util.TouchFile(registrationProbePath)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create registration probe file", "registrationProbePath", registrationProbePath)
@@ -110,9 +121,9 @@ func (e registrationServer) GetInfo(ctx context.Context, req *registerapi.InfoRe
 	}
 
 	return &registerapi.PluginInfo{
-		Type:              registerapi.CSIPlugin,
-		Name:              e.driverName,
-		Endpoint:          e.endpoint,
+		Type:              registerapi.CSIPlugin, // 当前插件是CSI插件
+		Name:              e.driverName,          // 当前CSI插件的名字
+		Endpoint:          e.endpoint,            // 当前插件的Socket路径
 		SupportedVersions: e.version,
 	}, nil
 }
@@ -141,6 +152,7 @@ func main() {
 		return
 	}
 
+	// TODO 注册路径是干嘛用的？
 	if *kubeletRegistrationPath == "" {
 		klog.Error("kubelet-registration-path is a required parameter")
 		os.Exit(1)
@@ -156,6 +168,7 @@ func main() {
 			klog.Fatalf("Failed to check if registration path exists, registrationProbePath=%s err=%v", registrationProbePath, err)
 			os.Exit(1)
 		}
+		// 如果registration文件不存在，说明Kubelet注册失败，直接退出
 		if !lockfileExists {
 			klog.Fatalf("Kubelet plugin registration hasn't succeeded yet, file=%s doesn't exist.", registrationProbePath)
 			os.Exit(1)
@@ -179,6 +192,7 @@ func main() {
 	}
 
 	if *connectionTimeout != 0 {
+		// TODO 提示这个参数被废弃的同时，如果有新的参数，是不是应该提示新的参数
 		klog.Warning("--connection-timeout is deprecated and will have no effect")
 	}
 
@@ -190,6 +204,7 @@ func main() {
 	// can skip adding mapping to "csi.volume.kubernetes.io/nodeid" annotation.
 
 	klog.V(1).Infof("Attempting to open a gRPC connection with: %q", *csiAddress)
+	// 通过Socket文件和CSI插件建立连接
 	csiConn, err := connection.Connect(*csiAddress, cmm)
 	if err != nil {
 		klog.Errorf("error connecting to CSI driver: %v", err)
@@ -200,6 +215,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), *operationTimeout)
 	defer cancel()
 
+	// 通过GRPC调用IdentityClient服务的GetPluginInfo方法获取CSI插件的名字
 	csiDriverName, err := csirpc.GetDriverName(ctx, csiConn)
 	if err != nil {
 		klog.Errorf("error retreiving CSI driver name: %v", err)

@@ -128,6 +128,7 @@ func (e registrationServer) GetInfo(ctx context.Context, req *registerapi.InfoRe
 	}, nil
 }
 
+// NotifyRegistrationStatus 用于表示当前CSI插件是否已经注册
 func (e registrationServer) NotifyRegistrationStatus(ctx context.Context, status *registerapi.RegistrationStatus) (*registerapi.RegistrationStatusResponse, error) {
 	klog.Infof("Received NotifyRegistrationStatus call: %+v", status)
 	if !status.PluginRegistered {

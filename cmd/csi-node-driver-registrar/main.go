@@ -62,12 +62,14 @@ var (
 
 // Command line flags
 var (
+	// 这里说的是CSI插件的链接超时时间
 	connectionTimeout = flag.Duration("connection-timeout", 0, "The --connection-timeout flag is deprecated")
 	// CSI插件连接超时时间
 	operationTimeout = flag.Duration("timeout", time.Second, "Timeout for waiting for communication with driver")
-	// TODO CSI存储插件的位置，譬如：/csi/csi.sock
+	// CSI存储插件监听的Socket的位置，譬如：/csi/csi.sock
 	csiAddress = flag.String("csi-address", "/run/csi/socket", "Path of the CSI driver socket that the node-driver-registrar will connect to.")
-	// TODO 注册路径是干嘛用的？
+	// TODO 注册路径是干嘛用的？ 什么叫做K8S插件注册目录？
+	// 这个路径一般是：/var/lib/kubelet/plugins_registry
 	pluginRegistrationPath = flag.String("plugin-registration-path", "/registration", "Path to Kubernetes plugin registration directory.")
 	// TODO 这个路径似乎是Kubelet插件注册的路径，譬如：/var/lib/kubelet/plugins/<drivername.example.com>/csi.sock
 	kubeletRegistrationPath = flag.String("kubelet-registration-path", "", "Path of the CSI driver socket on the Kubernetes host machine.")
@@ -75,7 +77,9 @@ var (
 	healthzPort  = flag.Int("health-port", 0, "(deprecated) TCP port for healthz requests. Set to 0 to disable the healthz server. Only one of `--health-port` and `--http-endpoint` can be set.")
 	httpEndpoint = flag.String("http-endpoint", "", "The TCP network address where the HTTP server for diagnostics, including pprof and the health check indicating whether the registration socket exists, will listen (example: `:8080`). The default is empty string, which means the server is disabled. Only one of `--health-port` and `--http-endpoint` can be set.")
 	showVersion  = flag.Bool("version", false, "Show version.")
-	mode         = flag.String("mode", ModeRegistration, `The running mode of node-driver-registrar.
+	// 这个参数指的是node-driver-registrar的运行模式，ModeRegistration会一直运行，而ModeKubeletRegistrationProbe则是运行一次就结束，
+	// 与此同时还会返回注册结果
+	mode = flag.String("mode", ModeRegistration, `The running mode of node-driver-registrar.
 "registration" runs node-driver-registrar as a long running process. "kubelet-registration-probe" runs as a health check 
 and returns a status code of 0 if the driver was registered successfully, in the probe definition make sure that
 the value of --kubelet-registration-path is the same as in the container.`)
@@ -91,8 +95,8 @@ the value of --kubelet-registration-path is the same as in the container.`)
 
 // registrationServer is a sample plugin to work with plugin watcher
 type registrationServer struct {
-	driverName string // CSI插件的名字
-	endpoint   string
+	driverName string // CSI插件的名字，TODO 插件的名字应该是调用Identity.GetPluginInfo获取到的信息，这个名字是否需要和CSIDriver的name保持一致？
+	endpoint   string // 监听的socket文件，譬如：/var/lib/kubelet/plugins/csi-nfsplugin/csi.sock
 	version    []string
 }
 
@@ -101,8 +105,8 @@ var _ registerapi.RegistrationServer = registrationServer{}
 // newRegistrationServer returns an initialized registrationServer instance
 func newRegistrationServer(driverName string, endpoint string, versions []string) registerapi.RegistrationServer {
 	return &registrationServer{
-		driverName: driverName,
-		endpoint:   endpoint,
+		driverName: driverName, // 譬如：nfs.csi.k8s.io
+		endpoint:   endpoint,   // 譬如：/var/lib/kubelet/plugins/csi-nfsplugin/csi.sock
 		version:    versions,
 	}
 }
@@ -112,7 +116,7 @@ func (e registrationServer) GetInfo(ctx context.Context, req *registerapi.InfoRe
 	klog.Infof("Received GetInfo call: %+v", req)
 
 	// on successful registration, create the registration probe file
-	// 创建文件
+	// 创建文件 /var/lib/kubelet/plugins/csi-nfsplugin/registration
 	err := util.TouchFile(registrationProbePath)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create registration probe file", "registrationProbePath", registrationProbePath)
@@ -153,17 +157,22 @@ func main() {
 		return
 	}
 
-	// TODO 注册路径是干嘛用的？
+	// TODO 注册路径是干嘛用的？ 这个路径应该是Kubelet的插件注册路径，Kubelet就是通过这个路径找到对应的CSI插件的
+	// 譬如：/var/lib/kubelet/plugins/csi-nfsplugin/csi.sock
 	if *kubeletRegistrationPath == "" {
 		klog.Error("kubelet-registration-path is a required parameter")
 		os.Exit(1)
 	}
 	// set after we made sure that *kubeletRegistrationPath exists
+	// 获取目录：/var/lib/kubelet/plugins/csi-nfsplugin
 	kubeletRegistrationPathDir := filepath.Dir(*kubeletRegistrationPath)
+	// /var/lib/kubelet/plugins/csi-nfsplugin/registration
 	registrationProbePath = filepath.Join(kubeletRegistrationPathDir, "registration")
 
 	// with the mode kubelet-registration-probe
+	// ModeKubeletRegistrationProbe模式只运行一次
 	if modeIsKubeletRegistrationProbe() {
+		// 判断/var/lib/kubelet/plugins/csi-nfsplugin/registration文件是否存在
 		lockfileExists, err := util.DoesFileExist(registrationProbePath)
 		if err != nil {
 			klog.Fatalf("Failed to check if registration path exists, registrationProbePath=%s err=%v", registrationProbePath, err)
@@ -226,6 +235,6 @@ func main() {
 	klog.V(2).Infof("CSI driver name: %q", csiDriverName)
 	cmm.SetDriverName(csiDriverName)
 
-	// Run forever
+	// Run forever 注册CSI
 	nodeRegister(csiDriverName, addr)
 }

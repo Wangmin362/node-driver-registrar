@@ -40,6 +40,7 @@ func nodeRegister(csiDriverName, httpEndpoint string) {
 	// TODO 注册服务实现了Kubelet RegistrationServer接口，应该是用来注册插件的
 	registrar := newRegistrationServer(csiDriverName, *kubeletRegistrationPath, supportedVersions)
 	// 拼接socket完整路径：<pluginRegistrationPath>/<CSIPluginName>-reg.sock
+	// 譬如：/var/lib/kubelet/plugins_registry/nfs.csi.k8s.io-reg.sock
 	socketPath := buildSocketPath(csiDriverName)
 	// 如果当前的Socket文件存在，就移除Socket文件，注意这个Socket文件并不是CSI插件Socket文件
 	if err := util.CleanupSocketFile(socketPath); err != nil {
@@ -71,6 +72,7 @@ func nodeRegister(csiDriverName, httpEndpoint string) {
 	util.CleanupFile(registrationProbePath)
 
 	// Registers kubelet plugin watcher api.
+	// 注册服务
 	registerapi.RegisterRegistrationServer(grpcServer, registrar)
 
 	// 提供健康检测断电以及pprof检测端点

@@ -68,10 +68,11 @@ var (
 	operationTimeout = flag.Duration("timeout", time.Second, "Timeout for waiting for communication with driver")
 	// CSI存储插件监听的Socket的位置，譬如：/csi/csi.sock
 	csiAddress = flag.String("csi-address", "/run/csi/socket", "Path of the CSI driver socket that the node-driver-registrar will connect to.")
-	// TODO 注册路径是干嘛用的？ 什么叫做K8S插件注册目录？
 	// 这个路径一般是：/var/lib/kubelet/plugins_registry
+	// kubelet plugin的注册路径，用于实现插件的注册接口
 	pluginRegistrationPath = flag.String("plugin-registration-path", "/registration", "Path to Kubernetes plugin registration directory.")
-	// TODO 这个路径似乎是Kubelet插件注册的路径，譬如：/var/lib/kubelet/plugins/<drivername.example.com>/csi.sock
+	// kubelet服务socket注册路径，譬如：/var/lib/kubelet/plugins/<drivername.example.com>/csi.sock
+	// 这个路径的socket用于实现插件服务接口，其实就是CSI Spec的NodeService
 	kubeletRegistrationPath = flag.String("kubelet-registration-path", "", "Path of the CSI driver socket on the Kubernetes host machine.")
 	// 设置node-driver-register健康检测端口
 	healthzPort  = flag.Int("health-port", 0, "(deprecated) TCP port for healthz requests. Set to 0 to disable the healthz server. Only one of `--health-port` and `--http-endpoint` can be set.")
@@ -106,12 +107,13 @@ var _ registerapi.RegistrationServer = registrationServer{}
 func newRegistrationServer(driverName string, endpoint string, versions []string) registerapi.RegistrationServer {
 	return &registrationServer{
 		driverName: driverName, // 譬如：nfs.csi.k8s.io
-		endpoint:   endpoint,   // 譬如：/var/lib/kubelet/plugins/csi-nfsplugin/csi.sock
-		version:    versions,
+		endpoint:   endpoint,   // 服务实现接口socket, 譬如：/var/lib/kubelet/plugins/csi-nfsplugin/csi.sock
+		version:    versions,   // 支持的版本
 	}
 }
 
 // GetInfo is the RPC invoked by plugin watcher
+// 实现注册接口GetInfo
 func (e registrationServer) GetInfo(ctx context.Context, req *registerapi.InfoRequest) (*registerapi.PluginInfo, error) {
 	klog.Infof("Received GetInfo call: %+v", req)
 
@@ -127,12 +129,13 @@ func (e registrationServer) GetInfo(ctx context.Context, req *registerapi.InfoRe
 	return &registerapi.PluginInfo{
 		Type:              registerapi.CSIPlugin, // 当前插件是CSI插件
 		Name:              e.driverName,          // 当前CSI插件的名字
-		Endpoint:          e.endpoint,            // 当前插件的Socket路径
+		Endpoint:          e.endpoint,            // CSI插件的服务实现接口的Socket
 		SupportedVersions: e.version,
 	}, nil
 }
 
 // NotifyRegistrationStatus 用于表示当前CSI插件是否已经注册
+// GetInfo以及NotifyRegistrationStatus都是由kubelet通过CSI插件实现的注册接口进行调用
 func (e registrationServer) NotifyRegistrationStatus(ctx context.Context, status *registerapi.RegistrationStatus) (*registerapi.RegistrationStatusResponse, error) {
 	klog.Infof("Received NotifyRegistrationStatus call: %+v", status)
 	if !status.PluginRegistered {
@@ -147,6 +150,11 @@ func modeIsKubeletRegistrationProbe() bool {
 	return *mode == ModeKubeletRegistrationProbe
 }
 
+// 1、Kubelet插件需要实现两类接口，一类是通用的注册接口。一类是不同类型的插件的特有接口。通过实现通用注册接口，
+// 并把socket放到/var/lib/kubelet/plugin_registry目录，实现kubelet插件的自动发现。于此同时，插件的注册接口的GetInfo需要返回插件特有接口
+// 的socket文件所在路径，这样kubelet就知道如何调用插件特有接口
+// 2、NodeDriverRegistrar就是通用注册接口的实现，NodeDriverRegistrar启动后会在/var/lib/kubelet/plugin_register目录创建socket，让
+// kubelet发现此插件
 func main() {
 	klog.InitFlags(nil)
 	flag.Set("logtostderr", "true")
@@ -157,7 +165,7 @@ func main() {
 		return
 	}
 
-	// TODO 注册路径是干嘛用的？ 这个路径应该是Kubelet的插件注册路径，Kubelet就是通过这个路径找到对应的CSI插件的
+	// 注册路径是干嘛用的？ 这个路径应该是Kubelet的插件注册路径，Kubelet就是通过这个路径找到对应的CSI插件的
 	// 譬如：/var/lib/kubelet/plugins/csi-nfsplugin/csi.sock
 	if *kubeletRegistrationPath == "" {
 		klog.Error("kubelet-registration-path is a required parameter")

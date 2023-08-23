@@ -37,12 +37,13 @@ func nodeRegister(csiDriverName, httpEndpoint string) {
 	// When kubeletRegistrationPath is specified then driver-registrar ONLY acts
 	// as gRPC server which replies to registration requests initiated by kubelet's
 	// plugins watcher infrastructure. Node labeling is done by kubelet's csi code.
-	// TODO 注册服务实现了Kubelet RegistrationServer接口，应该是用来注册插件的
+	// 注册服务实现了Kubelet RegistrationServer接口，把sockete文件放在/var/lib/kubelet/plugins_registry下，用于插件的自动发现
 	registrar := newRegistrationServer(csiDriverName, *kubeletRegistrationPath, supportedVersions)
 	// 拼接socket完整路径：<pluginRegistrationPath>/<CSIPluginName>-reg.sock
 	// 譬如：/var/lib/kubelet/plugins_registry/nfs.csi.k8s.io-reg.sock
 	socketPath := buildSocketPath(csiDriverName)
-	// 如果当前的Socket文件存在，就移除Socket文件，注意这个Socket文件并不是CSI插件Socket文件
+	// 1、如果当前的Socket文件存在，就移除Socket文件，注意这个Socket文件并不是CSI插件Socket文件
+	// 2、其实是重启之后，需要重新生成socket文件，让kubelet重新调用注册接口
 	if err := util.CleanupSocketFile(socketPath); err != nil {
 		klog.Errorf("%+v", err)
 		os.Exit(1)
@@ -55,7 +56,7 @@ func nodeRegister(csiDriverName, httpEndpoint string) {
 	}
 
 	klog.Infof("Starting Registration Server at: %s\n", socketPath)
-	// 监听socket
+	// 监听socket /var/lib/kubelet/plugins_registry/nfs.csi.k8s.io-reg.sock
 	lis, err := net.Listen("unix", socketPath)
 	if err != nil {
 		klog.Errorf("failed to listen on socket: %s with error: %+v", socketPath, err)
